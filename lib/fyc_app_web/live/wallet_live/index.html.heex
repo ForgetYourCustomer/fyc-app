@@ -1,0 +1,40 @@
+<.header>
+  Listing Wallets
+  <:actions>
+    <.link patch={~p"/wallets/new"}>
+      <.button>New Wallet</.button>
+    </.link>
+  </:actions>
+</.header>
+
+<.table
+  id="wallets"
+  rows={@streams.wallets}
+  row_click={fn {_id, wallet} -> JS.navigate(~p"/wallets/#{wallet}") end}
+>
+  <:action :let={{_id, wallet}}>
+    <div class="sr-only">
+      <.link navigate={~p"/wallets/#{wallet}"}>Show</.link>
+    </div>
+    <.link patch={~p"/wallets/#{wallet}/edit"}>Edit</.link>
+  </:action>
+  <:action :let={{id, wallet}}>
+    <.link
+      phx-click={JS.push("delete", value: %{id: wallet.id}) |> hide("##{id}")}
+      data-confirm="Are you sure?"
+    >
+      Delete
+    </.link>
+  </:action>
+</.table>
+
+<.modal :if={@live_action in [:new, :edit]} id="wallet-modal" show on_cancel={JS.patch(~p"/wallets")}>
+  <.live_component
+    module={FycAppWeb.WalletLive.FormComponent}
+    id={@wallet.id || :new}
+    title={@page_title}
+    action={@live_action}
+    wallet={@wallet}
+    patch={~p"/wallets"}
+  />
+</.modal>

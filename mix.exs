@@ -48,8 +48,8 @@ defmodule FycApp.MixProject do
        tag: "v2.1.1",
        sparse: "optimized",
        app: false,
-       compile: false,
-       depth: 1},
+       compile: false},
+      {:httpoison, "~> 2.0"},
       {:swoosh, "~> 1.11"},
       {:finch, "~> 0.13"},
       {:telemetry_metrics, "~> 1.0"},
@@ -61,7 +61,8 @@ defmodule FycApp.MixProject do
       # Added dependencies for authentication
       {:bcrypt_elixir, "~> 3.0"},
       {:gen_smtp, "~> 1.2"},
-      {:phoenix_swoosh, "~> 1.2"}
+      {:phoenix_swoosh, "~> 1.2"},
+      {:chumak, "~> 1.5"}
     ]
   end
 

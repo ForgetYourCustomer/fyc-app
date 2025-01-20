@@ -66,6 +66,11 @@ defmodule FycAppWeb.Router do
     get "/users/settings", UserSettingsController, :edit
     put "/users/settings", UserSettingsController, :update
     get "/users/settings/confirm_email/:token", UserSettingsController, :confirm_email
+
+    live_session :require_authenticated_user,
+      on_mount: [{FycAppWeb.UserAuth, :ensure_authenticated}] do
+      live "/wallet", WalletLive.Show
+    end
   end
 
   scope "/", FycAppWeb do

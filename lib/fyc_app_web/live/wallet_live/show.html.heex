@@ -1,0 +1,36 @@
+<.header>
+  My Wallet
+  <:subtitle>Your wallet balances and transactions</:subtitle>
+</.header>
+
+<.list>
+  <:item :for={balance <- @wallet.balances} title={balance.currency}>
+    <div class="flex items-center justify-between">
+      <span>{balance.amount}</span>
+      <.button phx-click="toggle-deposit" phx-value-currency={balance.currency} class="ml-4">
+        Deposit
+      </.button>
+    </div>
+    <%= if @selected_currency == balance.currency do %>
+      <div class="w-[calc(100%+2rem)] -mx-4">
+        <%= if length(balance.deposits) > 0 do %>
+          <div class="p-4 space-y-2">
+            <div class="bg-gray-50 p-3 rounded-lg">
+              <p class="text-sm font-medium">Deposit Address:</p>
+              <p class="font-mono text-sm">{hd(balance.deposits).address}</p>
+            </div>
+          </div>
+        <% else %>
+          <div class="p-4 text-center">
+            <p class="mb-4">No deposit address yet</p>
+            <.button phx-click="create-deposit" phx-value-currency={balance.currency}>
+              Get New Address
+            </.button>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </:item>
+</.list>
+
+<.back navigate={~p"/wallets"}>Back to wallets</.back>

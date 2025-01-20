@@ -8,20 +8,21 @@ defmodule FycApp.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      # Start the Telemetry supervisor
       FycAppWeb.Telemetry,
+      # Start the Ecto repository
       FycApp.Repo,
-      {DNSCluster, query: Application.get_env(:fyc_app, :dns_cluster_query) || :ignore},
+      # Start the PubSub system
       {Phoenix.PubSub, name: FycApp.PubSub},
-      # Start the Finch HTTP client for sending emails
+      # Start Finch
       {Finch, name: FycApp.Finch},
-      # Start a worker by calling: FycApp.Worker.start_link(arg)
-      # {FycApp.Worker, arg},
-      # Start to serve requests, typically the last entry
+      # Start the Endpoint (http/https)
       FycAppWeb.Endpoint
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
+    :ok = Application.ensure_started(:chumak)
+    children = children ++ [FycApp.Bitserv.Listener]
+
     opts = [strategy: :one_for_one, name: FycApp.Supervisor]
     Supervisor.start_link(children, opts)
   end
