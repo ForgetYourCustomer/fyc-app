@@ -1,0 +1,219 @@
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+  <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl p-8">
+    <h1 class="text-2xl font-semibold mb-6">Trade</h1>
+
+    <div class="grid grid-cols-12 gap-6">
+      <%!-- Trading chart will go here --%>
+      <div class="col-span-8 bg-gray-50 rounded-lg p-4 h-96">
+        <p class="text-gray-500">Chart coming soon...</p>
+      </div>
+
+      <%!-- Order book --%>
+      <div class="col-span-4 bg-gray-50 rounded-lg p-4 h-96">
+        <h3 class="text-lg font-medium mb-4">Order Book</h3>
+        <div class="space-y-2">
+          <div class="grid grid-cols-3 text-sm text-gray-500">
+            <div>Price</div>
+            <div class="text-right">Amount</div>
+            <div class="text-right">Total</div>
+          </div>
+
+          <%!-- Sell orders (red) --%>
+          <div class="space-y-1">
+            <%= for order <- @sell_orders do %>
+              <div class="grid grid-cols-3 text-sm text-red-600">
+                <div>{order.price}</div>
+                <div class="text-right">{order.amount}</div>
+                <div class="text-right">{Decimal.mult(order.price, order.amount)}</div>
+              </div>
+            <% end %>
+          </div>
+
+          <%!-- Current price --%>
+          <div class="py-2 border-y border-gray-200">
+            <div class="text-lg font-medium text-center">
+              {@current_price} USDT
+            </div>
+          </div>
+
+          <%!-- Buy orders (green) --%>
+          <div class="space-y-1">
+            <%= for order <- @buy_orders do %>
+              <div class="grid grid-cols-3 text-sm text-green-600">
+                <div>{order.price}</div>
+                <div class="text-right">{order.amount}</div>
+                <div class="text-right">{Decimal.mult(order.price, order.amount)}</div>
+              </div>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <%!-- Buy Order Form --%>
+      <div class="col-span-4 bg-gray-50 rounded-lg p-4">
+        <div class="bg-white rounded-lg shadow-sm ring-1 ring-gray-900/5 p-4">
+          <h3 class="text-lg font-medium mb-4 text-green-600">Buy BTC</h3>
+          <.form for={@buy_form} phx-submit="place_buy_order" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Price (USDT)</label>
+              <.input
+                type="number"
+                field={@buy_form[:price]}
+                step="0.01"
+                min="0"
+                required
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Amount (BTC)</label>
+              <.input
+                type="number"
+                field={@buy_form[:amount]}
+                step="0.00000001"
+                min="0"
+                required
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Total (USDT)</label>
+              <div class="mt-1 block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-500 sm:text-sm">
+                {@buy_total}
+              </div>
+            </div>
+
+            <div class="pt-2">
+              <button
+                type="submit"
+                class="w-full rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600"
+              >
+                Place Buy Order
+              </button>
+            </div>
+          </.form>
+        </div>
+      </div>
+
+      <%!-- Sell Order Form --%>
+      <div class="col-span-4 bg-gray-50 rounded-lg p-4">
+        <div class="bg-white rounded-lg shadow-sm ring-1 ring-gray-900/5 p-4">
+          <h3 class="text-lg font-medium mb-4 text-red-600">Sell BTC</h3>
+          <.form for={@sell_form} phx-submit="place_sell_order" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Price (USDT)</label>
+              <.input
+                type="number"
+                field={@sell_form[:price]}
+                step="0.01"
+                min="0"
+                required
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Amount (BTC)</label>
+              <.input
+                type="number"
+                field={@sell_form[:amount]}
+                step="0.00000001"
+                min="0"
+                required
+                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-sm"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700">Total (USDT)</label>
+              <div class="mt-1 block w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-500 sm:text-sm">
+                {@sell_total}
+              </div>
+            </div>
+
+            <div class="pt-2">
+              <button
+                type="submit"
+                class="w-full rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+              >
+                Place Sell Order
+              </button>
+            </div>
+          </.form>
+        </div>
+      </div>
+
+      <%!-- Open orders --%>
+      <div class="col-span-8 bg-gray-50 rounded-lg p-4">
+        <h3 class="text-lg font-medium mb-4">Open Orders</h3>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-300">
+            <thead>
+              <tr>
+                <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
+                <th class="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Price</th>
+                <th class="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Amount</th>
+                <th class="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Filled</th>
+                <th class="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Total</th>
+                <th class="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Status</th>
+                <th class="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Action</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">
+              <%= for order <- @open_orders do %>
+                <tr>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm">
+                    <span class={[
+                      "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
+                      order.side == "buy" && "bg-green-50 text-green-700 ring-green-600/20",
+                      order.side == "sell" && "bg-red-50 text-red-700 ring-red-600/20"
+                    ]}>
+                      {String.capitalize(order.side)}
+                    </span>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
+                    {order.price}
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
+                    {order.amount}
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
+                    {order.filled_amount}
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
+                    {Decimal.mult(order.price, order.amount)}
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-right">
+                    <span class={[
+                      "inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
+                      order.status == "pending" &&
+                        "bg-yellow-50 text-yellow-700 ring-yellow-600/20",
+                      order.status == "partial" && "bg-blue-50 text-blue-700 ring-blue-600/20",
+                      order.status == "filled" && "bg-green-50 text-green-700 ring-green-600/20",
+                      order.status == "cancelled" && "bg-gray-50 text-gray-700 ring-gray-600/20"
+                    ]}>
+                      {String.capitalize(order.status)}
+                    </span>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-4 text-sm text-right">
+                    <%= if order.status in ["pending", "partial"] do %>
+                      <button
+                        phx-click="cancel_order"
+                        phx-value-id={order.id}
+                        class="text-red-600 hover:text-red-900"
+                      >
+                        Cancel
+                      </button>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

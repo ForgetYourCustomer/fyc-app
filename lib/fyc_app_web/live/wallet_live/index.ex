@@ -14,9 +14,37 @@ defmodule FycAppWeb.WalletLive.Index do
          |> redirect(to: ~p"/")}
 
       current_user ->
+        if connected?(socket) do
+          Phoenix.PubSub.subscribe(FycApp.PubSub, "wallet:#{current_user.id}")
+        end
+        
         {:ok, assign(socket, :wallet, Wallets.get_user_wallet(current_user.id))}
     end
   end
+
+  @impl true
+  def handle_info({:balance_updated, currency, amount}, socket) do
+    updated_wallet = update_in(
+      socket.assigns.wallet,
+      [Access.key(:balances)],
+      fn balances ->
+        Enum.map(balances, fn
+          %{currency: ^currency} = balance -> %{balance | amount: amount}
+          balance -> balance
+        end)
+      end
+    )
+
+    {:noreply, assign(socket, :wallet, updated_wallet)}
+  end
+
+  @impl true
+  def handle_info({:wallet_updated, wallet}, socket) do
+    {:noreply, assign(socket, :wallet, wallet)}
+  end
+
+  # Ignore updates for other wallets
+  def update(_assigns, socket), do: {:ok, socket}
 
   @impl true
   def handle_params(params, _url, socket) do

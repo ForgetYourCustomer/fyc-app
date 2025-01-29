@@ -6,7 +6,7 @@
 <.list>
   <:item :for={balance <- @wallet.balances} title={balance.currency}>
     <div class="flex items-center justify-between">
-      <span>{balance.amount}</span>
+      <span>{format_balance_amount(balance.amount, balance.currency)}</span>
       <.button phx-click="toggle-deposit" phx-value-currency={balance.currency} class="ml-4">
         Deposit
       </.button>

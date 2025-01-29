@@ -70,6 +70,7 @@ defmodule FycAppWeb.Router do
     live_session :require_authenticated_user,
       on_mount: [{FycAppWeb.UserAuth, :ensure_authenticated}] do
       live "/wallet", WalletLive.Show
+      live "/trade", TradeLive.Show
     end
   end
 
