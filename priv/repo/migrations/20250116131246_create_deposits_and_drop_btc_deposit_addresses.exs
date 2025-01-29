@@ -8,7 +8,7 @@ defmodule FycApp.Repo.Migrations.CreateDepositsAndDropBtcDepositAddresses do
       add :id, :binary_id, primary_key: true
       add :address, :string, null: false
       add :metadata, :map, default: %{}
-      add :balance_id, references(:balances), null: false
+      add :balance_id, references(:balances, type: :binary_id), null: false
 
       timestamps(type: :utc_datetime)
     end

@@ -4,7 +4,8 @@ defmodule FycApp.Repo.Migrations.CreateUsersAuthTables do
   def change do
     execute "CREATE EXTENSION IF NOT EXISTS citext", ""
 
-    create table(:users) do
+    create table(:users, primary_key: false) do
+      add :id, :binary_id, primary_key: true
       # size: 160
       add :email, :citext, null: false
       # bcrypt hash is always 60 chars
@@ -17,8 +18,9 @@ defmodule FycApp.Repo.Migrations.CreateUsersAuthTables do
     create unique_index(:users, [:email])
     create constraint(:users, :email_must_have_at_sign, check: "email ~ '@'")
 
-    create table(:users_tokens) do
-      add :user_id, references(:users, on_delete: :delete_all), null: false
+    create table(:users_tokens, primary_key: false) do
+      add :id, :binary_id, primary_key: true
+      add :user_id, references(:users, type: :binary_id, on_delete: :delete_all), null: false
       # for 256-bit tokens
       # , size: 32
       add :token, :binary, null: false

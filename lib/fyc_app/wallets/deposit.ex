@@ -3,6 +3,7 @@ defmodule FycApp.Wallets.Deposit do
   import Ecto.Changeset
 
   @primary_key {:id, :binary_id, autogenerate: true}
+  @foreign_key_type :binary_id
   schema "deposits" do
     field :address, :string
     field :metadata, :map, default: %{}

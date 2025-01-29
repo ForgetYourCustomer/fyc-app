@@ -5,7 +5,7 @@ defmodule FycApp.Repo.Migrations.CreateBtcDepositAddresses do
     create table(:btc_deposit_addresses, primary_key: false) do
       add :deposit_id, :integer, primary_key: true
       add :address, :string, null: false
-      add :wallet_id, references(:wallets, on_delete: :restrict), null: false
+      add :wallet_id, references(:wallets, type: :binary_id, on_delete: :restrict), null: false
 
       timestamps(type: :utc_datetime)
     end
