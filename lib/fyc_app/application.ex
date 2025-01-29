@@ -17,11 +17,14 @@ defmodule FycApp.Application do
       # Start Finch
       {Finch, name: FycApp.Finch},
       # Start the Endpoint (http/https)
-      FycAppWeb.Endpoint
+      FycAppWeb.Endpoint,
+      # Start the matching engine for trade execution
+      FycApp.Trade.MatchingEngine
     ]
 
     :ok = Application.ensure_started(:chumak)
     children = children ++ [FycApp.Bitserv.Listener]
+    children = children ++ [FycApp.Ethserv.Listener]
 
     opts = [strategy: :one_for_one, name: FycApp.Supervisor]
     Supervisor.start_link(children, opts)

@@ -8,11 +8,12 @@ defmodule FycApp.Deposits do
   alias FycApp.Repo
   alias FycApp.Wallets.{Balance, Deposit}
   alias FycApp.Bitserv
+  alias FycApp.Ethserv
 
   @doc """
   Creates a new deposit address for the given balance.
   """
-  def create_deposit_address(%Balance{} = balance) do
+  def create_deposit(%Balance{} = balance) do
     case get_new_address_from_api(balance.currency) do
       {:ok, address_data} ->
         %Deposit{}
@@ -111,6 +112,15 @@ defmodule FycApp.Deposits do
 
   defp get_new_address_from_api("USDT") do
     # Implement USDT address generation here
-    {:ok, %{address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e", metadata: %{}}}
+    case Ethserv.get_new_address() do
+      {:ok, %{"success" => true, "address" => address, "error" => nil}} ->
+        {:ok, %{address: address, metadata: %{}}}
+
+      {:ok, %{"success" => false, "error" => error}} ->
+        {:error, "Failed to get BTC address: #{error}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 end

@@ -23,4 +23,19 @@ defmodule FycApp.Wallets.Balance do
     |> validate_inclusion(:currency, ["BTC", "USDT"])
     |> cast_assoc(:deposits)
   end
+
+  @doc """
+  Creates a changeset for updating USDT balance with a deposit.
+  The deposit amount is expected to be a string representing a u256 number.
+  """
+  def deposit_usdt_balance_changeset(balance, deposit_amount) when is_binary(deposit_amount) do
+    current_amount = balance.amount || 0
+    deposit_int = String.to_integer(deposit_amount)
+    new_amount = current_amount + deposit_int
+
+    balance
+    |> cast(%{amount: new_amount}, [:amount])
+    |> validate_required([:amount])
+    |> validate_number(:amount, greater_than_or_equal_to: 0)
+  end
 end

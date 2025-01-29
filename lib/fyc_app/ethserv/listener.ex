@@ -1,4 +1,4 @@
-defmodule FycApp.Bitserv.Listener do
+defmodule FycApp.Ethserv.Listener do
   @moduledoc """
   ZeroMQ subscriber for listening to Bitserv transaction events.
   """
@@ -7,7 +7,7 @@ defmodule FycApp.Bitserv.Listener do
   require Logger
 
   @zmq_host ~c"127.0.0.1"
-  @zmq_port 5556
+  @zmq_port 5557
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -56,25 +56,25 @@ defmodule FycApp.Bitserv.Listener do
   defp handle_transaction(message) do
     case Jason.decode(message) do
       {:ok, tx_data} ->
-        deposits = tx_data["dpsts"]
+        deposit = tx_data["dpst"]["deposit"]
 
-        Enum.each(deposits, fn deposit ->
-          case FycApp.Wallets.process_deposit("BTC", %{"deposit" => deposit}) do
-            {:ok, %{deposit_history: deposit_history, balance: balance}} ->
-              Logger.info(
-                "Transaction processed successfully. Balance updated to #{balance.amount} for #{balance.currency}"
-              )
+        IO.inspect(tx_data, label: "txdata")
 
-            {:error, :deposit_not_found} ->
-              Logger.warning("Received transaction for unknown address: #{Enum.at(deposit, 0)}")
+        case FycApp.Wallets.process_deposit("USDT", %{"deposit" => deposit}) do
+          {:ok, %{deposit_history: deposit_history, balance: balance}} ->
+            Logger.info(
+              "Transaction processed successfully. Balance updated to #{balance.amount} for #{balance.currency}"
+            )
 
-            {:error, :check_tx, :transaction_exists, _} ->
-              Logger.info("Transaction already processed")
+          {:error, :deposit_not_found} ->
+            Logger.warning("Received transaction for unknown address: #{Enum.at(deposit, 0)}")
 
-            {:error, reason} ->
-              Logger.error("Failed to process deposit: #{inspect(reason)}")
-          end
-        end)
+          {:error, :check_tx, :transaction_exists, _} ->
+            Logger.info("Transaction already processed")
+
+          {:error, reason} ->
+            Logger.error("Failed to process deposit: #{inspect(reason)}")
+        end
 
         :ok
 

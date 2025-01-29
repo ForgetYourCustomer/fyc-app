@@ -1,9 +1,9 @@
-defmodule FycApp.Bitserv.Client do
+defmodule FycApp.Ethserv.Client do
   @moduledoc """
-  HTTP client for interacting with the Bitserv API.
+  HTTP client for interacting with the Ethserv API.
   """
 
-  @base_url "http://localhost:3001"
+  @base_url "http://localhost:3002"
 
   @doc """
   Gets a new deposit address from the Bitserv API.
