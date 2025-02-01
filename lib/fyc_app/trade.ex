@@ -9,6 +9,7 @@ defmodule FycApp.Trade do
   alias FycApp.Wallets
   alias Ecto.Multi
   alias FycApp.Trade.LockedBalance
+  alias FycApp.Currencies
 
   @doc """
   Creates a new order with funds validation.
@@ -47,10 +48,6 @@ defmodule FycApp.Trade do
 
       {:error, _failed_operation, changeset, _changes} ->
         {:error, changeset}
-
-      unexpected ->
-        IO.inspect(unexpected)
-        {:error, "Unexpected error"}
     end
   end
 
@@ -116,10 +113,22 @@ defmodule FycApp.Trade do
       iex> cancel_order(order)
       {:ok, %Order{}}
   """
-  def cancel_order(%Order{} = order) do
+  def cancel_order(user, order_id) do
+    order = get_order!(order_id)
+
+    if order.user_id != user.id do
+      {:error, :unauthorized}
+    end
+
+    status =
+      case order.filled_amount do
+        0 -> "cancelled"
+        _ -> "partially_cancelled"
+      end
+
     Multi.new()
-    |> Multi.update(:order, Order.changeset(order, %{status: "cancelled"}))
-    |> Multi.run(:unlock_balance, fn repo, _changes ->
+    |> Multi.update(:order, Order.changeset(order, %{status: status}))
+    |> Multi.run(:unlock_balance, fn _repo, _changes ->
       unlock_balance(order)
     end)
     |> Repo.transaction()
@@ -313,26 +322,35 @@ defmodule FycApp.Trade do
 
   defp lock_balance(
          user,
-         %{side: "buy", quote_currency: currency, price: price, amount: amount} = attrs
+         %{
+           side: "buy",
+           quote_currency: currency,
+           price: price,
+           amount: amount,
+           order_id: order_id
+         } = _attrs
        ) do
-    required_amount = price * amount
+    btc_amount = Currencies.satoshis_to_btc(amount)
+
+    required_amount = Decimal.mult(Decimal.new(price), btc_amount) |> Decimal.to_integer()
 
     available_amount = available_balance(user.id, currency)
 
     if available_amount < required_amount do
-      {:error, "Insufficient available #{currency} balance"}
+      {:error, :insufficient_balance}
     else
       create_locked_balance(%{
         user_id: user.id,
         currency: currency,
-        amount: required_amount
+        amount: required_amount,
+        order_id: order_id
       })
     end
   end
 
   defp lock_balance(
          user,
-         %{side: "sell", base_currency: currency, amount: amount, order_id: order_id} = attrs
+         %{side: "sell", base_currency: currency, amount: amount, order_id: order_id} = _attrs
        ) do
     # Get current balance and any existing locks
     available_amount = available_balance(user.id, currency)
@@ -353,17 +371,20 @@ defmodule FycApp.Trade do
     case order.side do
       "buy" ->
         currency = order.quote_currency
-        amount = order.price * (order.amount - order.filled_amount)
+        unfilled_amount = order.amount - order.filled_amount
+        btc_amount = Currencies.satoshis_to_btc(unfilled_amount)
+        amount = Decimal.mult(Decimal.new(order.price), btc_amount) |> Decimal.to_integer()
         unlock_amount(order.user_id, order.id, currency, amount)
 
       "sell" ->
         currency = order.base_currency
-        amount = order.amount - order.filled_amount
-        unlock_amount(order.user_id, order.id, currency, amount)
+        unfilled_amount = order.amount - order.filled_amount
+
+        unlock_amount(order.user_id, order.id, currency, unfilled_amount)
     end
   end
 
-  defp unlock_amount(user_id, order_id, currency, amount) do
+  defp unlock_amount(user_id, order_id, currency, _amount) do
     query =
       from lb in LockedBalance,
         where:
@@ -378,9 +399,6 @@ defmodule FycApp.Trade do
       locked_balance ->
         Multi.new()
         |> Multi.delete(:delete_locked_balance, locked_balance)
-        |> Multi.run(:credit_balance, fn _repo, _ ->
-          Wallets.credit_balance(user_id, currency, amount)
-        end)
         |> Repo.transaction()
     end
   end
@@ -409,10 +427,15 @@ defmodule FycApp.Trade do
   end
 
   defp broadcast_cancel_order(order) do
+    # Phoenix.PubSub.broadcast(
+    #   FycApp.PubSub,
+    #   "orders:#{order.base_currency}_#{order.quote_currency}",
+    #   {:cancel_order, order}
+    # )
     Phoenix.PubSub.broadcast(
       FycApp.PubSub,
-      "orders:#{order.base_currency}_#{order.quote_currency}",
-      {:cancel_order, order}
+      "user_orders:#{order.user_id}",
+      {:order_cancelled, order}
     )
   end
 

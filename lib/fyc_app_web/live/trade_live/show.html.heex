@@ -208,16 +208,19 @@
                       </span>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
-                      {cents_to_usd(order.price)}
+                      {Currencies.sunit_to_usdt(order.price)}
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
-                      {satoshis_to_btc(order.amount)}
+                      {Currencies.satoshis_to_btc(order.amount)}
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
-                      {satoshis_to_btc(order.filled_amount)}
+                      {Currencies.satoshis_to_btc(order.filled_amount)}
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-right">
-                      {total_usd_for_cents_and_satoshis(order.price, order.amount)}
+                      {Currencies.satoshis_to_btc(order.amount)
+                      |> Decimal.mult(Currencies.sunit_to_usdt(order.price))
+                      |> Decimal.round(2)
+                      |> Decimal.normalize()}
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-right">
                       <span class={[

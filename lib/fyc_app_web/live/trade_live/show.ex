@@ -37,12 +37,17 @@ defmodule FycAppWeb.TradeLive.Show do
   def handle_event("place_buy_order", %{"price" => price, "amount" => amount}, socket) do
     current_user = socket.assigns.current_user
 
+    # Convert stringified USDT price to Integer(cents) result has to be an integer
+    price_cents = Currencies.usdt_to_sunit(price)
+    # Convert stringified BTC amount to Integer(satoshis) result has to be an integer
+    amount_satoshis = Currencies.btc_to_satoshis(amount)
+
     attrs = %{
-      "side" => "buy",
-      "price" => price,
-      "amount" => amount,
-      "base_currency" => "BTC",
-      "quote_currency" => "USDT"
+      side: "buy",
+      price: price_cents,
+      amount: amount_satoshis,
+      base_currency: "BTC",
+      quote_currency: "USDT"
     }
 
     case Trade.create_order(current_user, attrs) do
@@ -72,9 +77,9 @@ defmodule FycAppWeb.TradeLive.Show do
     current_user = socket.assigns.current_user
 
     # Convert stringified USDT price to Integer(cents) result has to be an integer
-    price_cents = dollar_to_cents(price)
+    price_cents = Currencies.usdt_to_sunit(price)
     # Convert stringified BTC amount to Integer(satoshis) result has to be an integer
-    amount_satoshis = btc_to_satoshis(amount)
+    amount_satoshis = Currencies.btc_to_satoshis(amount)
 
     attrs = %{
       side: "sell",
@@ -83,8 +88,6 @@ defmodule FycAppWeb.TradeLive.Show do
       base_currency: "BTC",
       quote_currency: "USDT"
     }
-
-    IO.inspect(attrs, label: "attrs")
 
     case Trade.create_order(current_user, attrs) do
       {:ok, _order} ->
@@ -112,7 +115,7 @@ defmodule FycAppWeb.TradeLive.Show do
   def handle_event("cancel_order", %{"id" => order_id}, socket) do
     current_user = socket.assigns.current_user
 
-    case Trade.cancel_order(order_id, current_user) do
+    case Trade.cancel_order(current_user, order_id) do
       {:ok, _order} ->
         {:noreply, put_flash(socket, :info, "Order cancelled successfully")}
 
@@ -172,6 +175,16 @@ defmodule FycAppWeb.TradeLive.Show do
     socket =
       socket
       |> assign(:open_orders, [order | socket.assigns.open_orders])
+      |> assign_available_balance(order)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:order_cancelled, order}, socket) do
+    socket =
+      socket
+      |> assign(:open_orders, Enum.reject(socket.assigns.open_orders, &(&1.id == order.id)))
       |> assign_available_balance(order)
 
     {:noreply, socket}

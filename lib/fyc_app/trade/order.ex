@@ -7,7 +7,7 @@ defmodule FycApp.Trade.Order do
 
   @order_types ["limit", "market"]
   @order_sides ["buy", "sell"]
-  @order_statuses ["pending", "partial", "filled", "cancelled"]
+  @order_statuses ["pending", "partial", "filled", "cancelled", "partially_cancelled"]
   @supported_pairs [
     {"BTC", "USDT"}
   ]
