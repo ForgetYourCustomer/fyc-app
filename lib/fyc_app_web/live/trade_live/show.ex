@@ -2,11 +2,15 @@ defmodule FycAppWeb.TradeLive.Show do
   use FycAppWeb, :live_view
   alias FycApp.Trade
   alias FycApp.Trade.MatchingEngine
+  alias FycApp.Currencies
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
       MatchingEngine.subscribe_to_market("BTC_USDT")
+      # Subscribe to balance updates for the current user
+      Phoenix.PubSub.subscribe(FycApp.PubSub, "balance:#{socket.assigns.current_user.id}")
+      Phoenix.PubSub.subscribe(FycApp.PubSub, "user_orders:#{socket.assigns.current_user.id}")
     end
 
     buy_form = to_form(%{"price" => "", "amount" => ""})
@@ -17,12 +21,13 @@ defmodule FycAppWeb.TradeLive.Show do
       |> assign(:page_title, "Trade")
       |> assign(:buy_form, buy_form)
       |> assign(:sell_form, sell_form)
-      |> assign(:buy_total, Decimal.new(0))
-      |> assign(:sell_total, Decimal.new(0))
-      |> assign(:current_price, Decimal.new(0))
+      |> assign(:buy_total, 0)
+      |> assign(:sell_total, 0)
+      |> assign(:current_price, 0)
       |> assign(:buy_orders, [])
       |> assign(:sell_orders, [])
-      |> assign(:open_orders, [])
+      |> assign(:open_orders, Trade.list_user_orders(socket.assigns.current_user))
+      |> assign_available_balances()
       |> assign_order_book()
 
     {:ok, socket}
@@ -46,7 +51,7 @@ defmodule FycAppWeb.TradeLive.Show do
           socket
           |> put_flash(:info, "Buy order placed successfully")
           |> assign(:buy_form, to_form(%{"price" => "", "amount" => ""}))
-          |> assign(:buy_total, Decimal.new(0))
+          |> assign(:buy_total, 0)
 
         {:noreply, socket}
 
@@ -66,13 +71,20 @@ defmodule FycAppWeb.TradeLive.Show do
   def handle_event("place_sell_order", %{"price" => price, "amount" => amount}, socket) do
     current_user = socket.assigns.current_user
 
+    # Convert stringified USDT price to Integer(cents) result has to be an integer
+    price_cents = dollar_to_cents(price)
+    # Convert stringified BTC amount to Integer(satoshis) result has to be an integer
+    amount_satoshis = btc_to_satoshis(amount)
+
     attrs = %{
-      "side" => "sell",
-      "price" => price,
-      "amount" => amount,
-      "base_currency" => "BTC",
-      "quote_currency" => "USDT"
+      side: "sell",
+      price: price_cents,
+      amount: amount_satoshis,
+      base_currency: "BTC",
+      quote_currency: "USDT"
     }
+
+    IO.inspect(attrs, label: "attrs")
 
     case Trade.create_order(current_user, attrs) do
       {:ok, _order} ->
@@ -147,6 +159,24 @@ defmodule FycAppWeb.TradeLive.Show do
     {:noreply, assign_order_book(socket)}
   end
 
+  @impl true
+  def handle_info({:balance_updated, currency}, socket) do
+    # Update both BTC and USDT available balances
+    socket = assign_available_balances(socket)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:order_created, order}, socket) do
+    socket =
+      socket
+      |> assign(:open_orders, [order | socket.assigns.open_orders])
+      |> assign_available_balance(order)
+
+    {:noreply, socket}
+  end
+
   defp assign_order_book(socket) do
     # Get initial order book state
     current_user = socket.assigns.current_user
@@ -169,4 +199,31 @@ defmodule FycAppWeb.TradeLive.Show do
   end
 
   defp maybe_update_current_price(socket, _), do: socket
+
+  defp assign_available_balances(socket) do
+    balances =
+      Currencies.supported_currencies()
+      |> Map.new(fn currency ->
+        {currency, Trade.available_balance(socket.assigns.current_user.id, currency)}
+      end)
+
+    IO.inspect(balances, label: "balances")
+
+    assign(socket, :available_balances, balances)
+  end
+
+  defp assign_available_balance(socket, order) do
+    currency =
+      if order.side == "buy", do: order.quote_currency, else: order.base_currency
+
+    updated_balances =
+      Map.update(
+        socket.assigns.available_balances || %{},
+        currency,
+        Trade.available_balance(socket.assigns.current_user.id, currency),
+        fn _old -> Trade.available_balance(socket.assigns.current_user.id, currency) end
+      )
+
+    assign(socket, :available_balances, updated_balances)
+  end
 end

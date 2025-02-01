@@ -15,7 +15,7 @@ defmodule FycApp.Trade.PriorityQueue do
   """
   def insert_buy(queue, price, order) do
     # Negate price for reverse ordering
-    key = {Decimal.negate(price), order.inserted_at, order.id}
+    key = {-price, order.inserted_at, order.id}
     :gb_trees.insert(key, order, queue)
   end
 
@@ -33,6 +33,7 @@ defmodule FycApp.Trade.PriorityQueue do
   """
   def remove(queue, order) do
     key = find_key(queue, order)
+
     case key do
       nil -> queue
       key -> :gb_trees.delete(key, queue)
@@ -44,8 +45,9 @@ defmodule FycApp.Trade.PriorityQueue do
   """
   def update(queue, order) do
     case find_key(queue, order) do
-      nil -> 
+      nil ->
         queue
+
       key ->
         queue
         |> :gb_trees.delete(key)
@@ -58,8 +60,10 @@ defmodule FycApp.Trade.PriorityQueue do
   """
   def peek(queue) do
     case :gb_trees.size(queue) do
-      0 -> nil
-      _ -> 
+      0 ->
+        nil
+
+      _ ->
         {_key, order} = :gb_trees.smallest(queue)
         order
     end
@@ -70,8 +74,9 @@ defmodule FycApp.Trade.PriorityQueue do
   """
   def pop(queue) do
     case :gb_trees.size(queue) do
-      0 -> 
+      0 ->
         {nil, queue}
+
       _ ->
         {key, order, new_queue} = :gb_trees.take_smallest(queue)
         {order, new_queue}
@@ -89,8 +94,10 @@ defmodule FycApp.Trade.PriorityQueue do
     case :gb_trees.next(iter) do
       none when none in [:none, none] ->
         nil
+
       {key, order, _next_iter} when order.id == target_order.id ->
         key
+
       {_key, _order, next_iter} ->
         find_key_iter(next_iter, target_order)
     end

@@ -6,7 +6,7 @@ defmodule FycApp.Trade.LockedBalance do
   @foreign_key_type :binary_id
 
   schema "locked_balances" do
-    field :amount, :decimal
+    field :amount, :integer
     field :currency, :string
     belongs_to :user, FycApp.Accounts.User
     belongs_to :order, FycApp.Trade.Order
@@ -16,7 +16,7 @@ defmodule FycApp.Trade.LockedBalance do
 
   @doc """
   Creates a changeset for a locked balance.
-  
+
   ## Validations
     - amount must be positive
     - currency must be present

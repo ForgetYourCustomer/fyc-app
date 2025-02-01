@@ -17,9 +17,9 @@ defmodule FycApp.Trade.Order do
     field :side, :string
     field :base_currency, :string
     field :quote_currency, :string
-    field :price, :decimal
-    field :amount, :decimal
-    field :filled_amount, :decimal, default: Decimal.new(0)
+    field :price, :integer
+    field :amount, :integer
+    field :filled_amount, :integer, default: 0
     field :status, :string, default: "pending"
     field :client_order_id, :string
     belongs_to :user, FycApp.Accounts.User
@@ -80,6 +80,41 @@ defmodule FycApp.Trade.Order do
     |> unique_constraint(:client_order_id)
   end
 
+  def create_limit_order_changeset(order, attrs) do
+    attrs = Map.put(attrs, :order_type, "limit") |> Map.put(:status, "pending")
+
+    order
+    |> cast(attrs, [
+      :order_type,
+      :side,
+      :base_currency,
+      :quote_currency,
+      :price,
+      :amount,
+      :status,
+      :client_order_id,
+      :user_id
+    ])
+    |> validate_required([
+      :order_type,
+      :side,
+      :base_currency,
+      :quote_currency,
+      :price,
+      :amount,
+      :status,
+      :client_order_id,
+      :user_id
+    ])
+    |> validate_inclusion(:side, @order_sides)
+    |> validate_number(:price, greater_than: 0)
+    |> validate_number(:amount, greater_than: 0)
+    |> validate_number(:filled_amount, greater_than_or_equal_to: 0)
+    |> validate_filled_amount()
+    |> validate_trading_pair()
+    |> unique_constraint(:client_order_id)
+  end
+
   defp validate_filled_amount(changeset) do
     case {get_field(changeset, :amount), get_field(changeset, :filled_amount)} do
       {nil, _} ->
@@ -89,7 +124,7 @@ defmodule FycApp.Trade.Order do
         changeset
 
       {amount, filled_amount} ->
-        if Decimal.compare(filled_amount, amount) == :gt do
+        if filled_amount > amount do
           add_error(changeset, :filled_amount, "cannot be greater than amount")
         else
           changeset

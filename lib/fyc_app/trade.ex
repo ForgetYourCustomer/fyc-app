@@ -8,6 +8,7 @@ defmodule FycApp.Trade do
   alias FycApp.Trade.{Order, TradeExecution}
   alias FycApp.Wallets
   alias Ecto.Multi
+  alias FycApp.Trade.LockedBalance
 
   @doc """
   Creates a new order with funds validation.
@@ -33,24 +34,23 @@ defmodule FycApp.Trade do
     attrs = Map.put(attrs, :user_id, user.id)
 
     Multi.new()
-    |> Multi.run(:validate_balance, fn repo, _changes ->
-      validate_balance(user, attrs)
-    end)
-    |> Multi.run(:lock_balance, fn repo, _changes ->
-      lock_balance(user, attrs)
-    end)
-    |> Multi.insert(:order, fn _changes ->
-      Order.changeset(%Order{}, attrs)
+    |> Multi.insert(:order, Order.create_limit_order_changeset(%Order{}, attrs))
+    |> Multi.run(:lock_balance, fn _repo, %{order: order} ->
+      lock_balance(user, Map.put(attrs, :order_id, order.id))
     end)
     |> Repo.transaction()
     |> case do
       {:ok, %{order: order}} = result ->
         # Broadcast the new order to the matching engine
-        broadcast_new_order(order)
+        broadcast_order_created(order)
         result
-      
+
       {:error, _failed_operation, changeset, _changes} ->
         {:error, changeset}
+
+      unexpected ->
+        IO.inspect(unexpected)
+        {:error, "Unexpected error"}
     end
   end
 
@@ -65,12 +65,14 @@ defmodule FycApp.Trade do
       }
   """
   def list_market_orders(base_currency, quote_currency) do
-    base_query = from(o in Order,
-      where: o.base_currency == ^base_currency and
-             o.quote_currency == ^quote_currency and
-             o.status in ["pending", "partial"],
-      order_by: [desc: o.inserted_at]
-    )
+    base_query =
+      from(o in Order,
+        where:
+          o.base_currency == ^base_currency and
+            o.quote_currency == ^quote_currency and
+            o.status in ["pending", "partial"],
+        order_by: [desc: o.inserted_at]
+      )
 
     buy_orders =
       from(o in base_query,
@@ -103,7 +105,7 @@ defmodule FycApp.Trade do
     Order
     |> where([o], o.user_id == ^user.id)
     |> where([o], o.status in ["pending", "partial"])
-    |> order_by([o], [desc: o.inserted_at])
+    |> order_by([o], desc: o.inserted_at)
     |> Repo.all()
   end
 
@@ -125,7 +127,7 @@ defmodule FycApp.Trade do
       {:ok, %{order: order}} = result ->
         broadcast_cancel_order(order)
         result
-      
+
       {:error, _failed_operation, changeset, _changes} ->
         {:error, changeset}
     end
@@ -143,18 +145,29 @@ defmodule FycApp.Trade do
     Multi.new()
     |> Multi.run(:lock_orders, fn repo, _ ->
       # Lock both orders to prevent concurrent modifications
-      buy_order = repo.one(from o in Order,
-        where: o.id == ^buy_order.id,
-        lock: "FOR UPDATE"
-      )
-      sell_order = repo.one(from o in Order,
-        where: o.id == ^sell_order.id,
-        lock: "FOR UPDATE"
-      )
+      buy_order =
+        repo.one(
+          from o in Order,
+            where: o.id == ^buy_order.id,
+            lock: "FOR UPDATE"
+        )
+
+      sell_order =
+        repo.one(
+          from o in Order,
+            where: o.id == ^sell_order.id,
+            lock: "FOR UPDATE"
+        )
 
       {:ok, %{buy_order: buy_order, sell_order: sell_order}}
     end)
-    |> Multi.run(:validate_orders, fn _repo, %{lock_orders: %{buy_order: buy_order, sell_order: sell_order}} ->
+    |> Multi.run(:validate_orders, fn _repo,
+                                      %{
+                                        lock_orders: %{
+                                          buy_order: buy_order,
+                                          sell_order: sell_order
+                                        }
+                                      } ->
       with :ok <- validate_order_status(buy_order),
            :ok <- validate_order_status(sell_order),
            :ok <- validate_remaining_amount(buy_order, amount),
@@ -168,7 +181,7 @@ defmodule FycApp.Trade do
         sell_order_id: sell_order.id,
         price: price,
         amount: amount,
-        total: Decimal.mult(price, amount)
+        total: price * amount
       }
     end)
     |> Multi.run(:update_orders, fn repo, %{trade: trade} ->
@@ -194,8 +207,9 @@ defmodule FycApp.Trade do
   end
 
   defp validate_remaining_amount(order, amount) do
-    remaining = Decimal.sub(order.amount, order.filled_amount)
-    if Decimal.compare(remaining, amount) != :lt do
+    remaining = order.amount - order.filled_amount
+
+    if remaining >= amount do
       :ok
     else
       {:error, "Insufficient remaining amount in order #{order.id}"}
@@ -205,38 +219,55 @@ defmodule FycApp.Trade do
   defp update_order_fills(repo, buy_order, sell_order, amount) do
     # Update buy order
     {buy_status, buy_filled} = get_new_status_and_filled(buy_order, amount)
-    {:ok, updated_buy} = update_order(buy_order, %{
-      status: buy_status,
-      filled_amount: buy_filled
-    })
+
+    {:ok, updated_buy} =
+      update_order(buy_order, %{
+        status: buy_status,
+        filled_amount: buy_filled
+      })
 
     # Update sell order
     {sell_status, sell_filled} = get_new_status_and_filled(sell_order, amount)
-    {:ok, updated_sell} = update_order(sell_order, %{
-      status: sell_status,
-      filled_amount: sell_filled
-    })
+
+    {:ok, updated_sell} =
+      update_order(sell_order, %{
+        status: sell_status,
+        filled_amount: sell_filled
+      })
 
     {:ok, %{buy_order: updated_buy, sell_order: updated_sell}}
   end
 
   defp get_new_status_and_filled(order, amount) do
-    new_filled = Decimal.add(order.filled_amount, amount)
-    status = if Decimal.compare(new_filled, order.amount) == :eq do
-      "filled"
-    else
-      "partial"
-    end
+    new_filled = order.filled_amount + amount
+
+    status =
+      if new_filled == order.amount do
+        "filled"
+      else
+        "partial"
+      end
+
     {status, new_filled}
   end
 
   defp update_balances(repo, buy_order, sell_order, amount, price) do
-    quote_amount = Decimal.mult(amount, price)
-    
-    with {:ok, _} <- transfer_balance(buy_order.user_id, sell_order.user_id, 
-                                    buy_order.quote_currency, quote_amount),
-         {:ok, _} <- transfer_balance(sell_order.user_id, buy_order.user_id, 
-                                    buy_order.base_currency, amount) do
+    quote_amount = amount * price
+
+    with {:ok, _} <-
+           transfer_balance(
+             buy_order.user_id,
+             sell_order.user_id,
+             buy_order.quote_currency,
+             quote_amount
+           ),
+         {:ok, _} <-
+           transfer_balance(
+             sell_order.user_id,
+             buy_order.user_id,
+             buy_order.base_currency,
+             amount
+           ) do
       {:ok, :balances_updated}
     end
   end
@@ -254,42 +285,41 @@ defmodule FycApp.Trade do
 
   # Private functions
 
-  defp validate_balance(user, %{side: "buy", quote_currency: currency, price: price, amount: amount} = attrs) do
-    required_amount = Decimal.mult(price, amount)
-    case Wallets.get_balance(user.id, currency) do
-      nil -> 
-        {:error, "No balance found for #{currency}"}
-      balance ->
-        if Decimal.compare(balance.amount, required_amount) == :lt do
-          {:error, "Insufficient #{currency} balance"}
-        else
-          {:ok, balance}
-        end
+  defp validate_balance(
+         user,
+         %{side: "buy", quote_currency: currency, price: price, amount: amount} = attrs
+       ) do
+    required_amount = price * amount
+    available = available_balance(user.id, currency)
+
+    if available >= required_amount do
+      {:ok, available}
+    else
+      {:error, "Insufficient available #{currency} balance"}
     end
   end
 
-  defp validate_balance(user, %{side: "sell", base_currency: currency, amount: amount} = attrs) do
-    case Wallets.get_balance(user.id, currency) do
-      nil -> 
-        {:error, "No balance found for #{currency}"}
-      balance ->
-        if Decimal.compare(balance.amount, amount) == :lt do
-          {:error, "Insufficient #{currency} balance"}
-        else
-          {:ok, balance}
-        end
+  defp validate_balance(user, %{side: "sell", base_currency: currency, amount: amount} = _attrs) do
+    available = available_balance(user.id, currency)
+
+    case available >= amount do
+      true ->
+        {:ok, available}
+
+      _ ->
+        {:error, "Insufficient available #{currency} balance"}
     end
   end
 
-  defp lock_balance(user, %{side: "buy", quote_currency: currency, price: price, amount: amount} = attrs) do
-    required_amount = Decimal.mult(price, amount)
-    
-    # Get current balance and any existing locks
-    balance = Wallets.get_balance!(user.id, currency)
-    locked_amount = get_total_locked_amount(user.id, currency)
-    available_amount = Decimal.sub(balance.amount, locked_amount)
+  defp lock_balance(
+         user,
+         %{side: "buy", quote_currency: currency, price: price, amount: amount} = attrs
+       ) do
+    required_amount = price * amount
 
-    if Decimal.compare(available_amount, required_amount) == :lt do
+    available_amount = available_balance(user.id, currency)
+
+    if available_amount < required_amount do
       {:error, "Insufficient available #{currency} balance"}
     else
       create_locked_balance(%{
@@ -300,19 +330,21 @@ defmodule FycApp.Trade do
     end
   end
 
-  defp lock_balance(user, %{side: "sell", base_currency: currency, amount: amount} = attrs) do
+  defp lock_balance(
+         user,
+         %{side: "sell", base_currency: currency, amount: amount, order_id: order_id} = attrs
+       ) do
     # Get current balance and any existing locks
-    balance = Wallets.get_balance!(user.id, currency)
-    locked_amount = get_total_locked_amount(user.id, currency)
-    available_amount = Decimal.sub(balance.amount, locked_amount)
+    available_amount = available_balance(user.id, currency)
 
-    if Decimal.compare(available_amount, amount) == :lt do
+    if amount > available_amount do
       {:error, "Insufficient available #{currency} balance"}
     else
       create_locked_balance(%{
         user_id: user.id,
         currency: currency,
-        amount: amount
+        amount: amount,
+        order_id: order_id
       })
     end
   end
@@ -321,23 +353,28 @@ defmodule FycApp.Trade do
     case order.side do
       "buy" ->
         currency = order.quote_currency
-        amount = Decimal.mult(order.price, Decimal.sub(order.amount, order.filled_amount))
+        amount = order.price * (order.amount - order.filled_amount)
         unlock_amount(order.user_id, order.id, currency, amount)
+
       "sell" ->
         currency = order.base_currency
-        amount = Decimal.sub(order.amount, order.filled_amount)
+        amount = order.amount - order.filled_amount
         unlock_amount(order.user_id, order.id, currency, amount)
     end
   end
 
   defp unlock_amount(user_id, order_id, currency, amount) do
-    query = from lb in LockedBalance,
-      where: lb.user_id == ^user_id and
-             lb.currency == ^currency and
-             lb.order_id == ^order_id
+    query =
+      from lb in LockedBalance,
+        where:
+          lb.user_id == ^user_id and
+            lb.currency == ^currency and
+            lb.order_id == ^order_id
 
     case Repo.one(query) do
-      nil -> {:error, :locked_balance_not_found}
+      nil ->
+        {:error, :locked_balance_not_found}
+
       locked_balance ->
         Multi.new()
         |> Multi.delete(:delete_locked_balance, locked_balance)
@@ -354,7 +391,7 @@ defmodule FycApp.Trade do
     |> select([lb], sum(lb.amount))
     |> Repo.one()
     |> case do
-      nil -> Decimal.new(0)
+      nil -> 0
       amount -> amount
     end
   end
@@ -363,11 +400,11 @@ defmodule FycApp.Trade do
     :crypto.strong_rand_bytes(16) |> Base.encode16()
   end
 
-  defp broadcast_new_order(order) do
+  defp broadcast_order_created(order) do
     Phoenix.PubSub.broadcast(
       FycApp.PubSub,
-      "orders:#{order.base_currency}_#{order.quote_currency}",
-      {:new_order, order}
+      "user_orders:#{order.user_id}",
+      {:order_created, order}
     )
   end
 
@@ -663,5 +700,38 @@ defmodule FycApp.Trade do
   """
   def change_trade_execution(%TradeExecution{} = trade_execution, attrs \\ %{}) do
     TradeExecution.changeset(trade_execution, attrs)
+  end
+
+  # This helper function calculates the total locked amount for a specific user and currency.
+  def get_locked_balance_total(user_id, currency) do
+    from(lb in LockedBalance,
+      where: lb.user_id == ^user_id and lb.currency == ^currency,
+      select: type(coalesce(sum(lb.amount), 0), :integer)
+    )
+    |> Repo.one()
+  end
+
+  # The available_balance function calculates how much balance is actually free.
+  def available_balance(user_id, currency) do
+    # Get wallet balance for this user and currency.
+    wallet_balance =
+      case FycApp.Wallets.get_balance(user_id, currency) do
+        {:ok, %FycApp.Wallets.Balance{amount: amount}} -> amount
+        _ -> 0
+      end
+
+    locked_balance = get_locked_balance_total(user_id, currency)
+
+    # Return available balance if positive, or return 0
+    max(wallet_balance - locked_balance, 0)
+  end
+
+  # Broadcast balance update for a user
+  defp broadcast_balance_update(user_id, currency, amount) do
+    Phoenix.PubSub.broadcast(
+      FycApp.PubSub,
+      "balance:#{user_id}",
+      {:balance_updated, currency, amount}
+    )
   end
 end

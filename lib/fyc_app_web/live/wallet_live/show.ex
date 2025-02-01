@@ -94,18 +94,18 @@ defmodule FycAppWeb.WalletLive.Show do
     {:noreply, assign(socket, :wallet, wallet)}
   end
 
-  # Convert BTC sats to BTC (1 BTC = 100,000,000 sats)
-  # Convert USDT u256 (6 decimals) to USDT with 2 decimal places
-  defp format_balance_amount(amount, currency) do
-    case currency do
-      "BTC" ->
-        btc = amount / 100_000_000
-        :erlang.float_to_binary(btc, decimals: 8)
+  # # Convert BTC sats to BTC (1 BTC = 100,000,000 sats)
+  # # Convert USDT u256 (6 decimals) to USDT with 2 decimal places
+  # defp format_balance_amount(amount, currency) do
+  #   case currency do
+  #     "BTC" ->
+  #       btc = amount / 100_000_000
+  #       :erlang.float_to_binary(btc, decimals: 8)
 
-      "USDT" ->
-        # Convert from 6 decimals to whole USDT
-        usdt = amount / 1_000_000
-        :erlang.float_to_binary(usdt, decimals: 2)
-    end
-  end
+  #     "USDT" ->
+  #       # Convert from 6 decimals to whole USDT
+  #       usdt = amount / 1_000_000
+  #       :erlang.float_to_binary(usdt, decimals: 2)
+  #   end
+  # end
 end

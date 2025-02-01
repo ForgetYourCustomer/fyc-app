@@ -10,5 +10,7 @@ defmodule FycAppWeb.Layouts do
   """
   use FycAppWeb, :html
 
+  import FycAppWeb.SidebarComponent
+
   embed_templates "layouts/*"
 end

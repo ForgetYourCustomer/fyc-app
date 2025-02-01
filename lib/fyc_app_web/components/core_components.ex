@@ -673,4 +673,45 @@ defmodule FycAppWeb.CoreComponents do
   def translate_errors(errors, field) when is_list(errors) do
     for {^field, {msg, opts}} <- errors, do: translate_error({msg, opts})
   end
+
+  def format_balance_amount(amount, currency) do
+    IO.inspect(amount, label: "amount")
+
+    case currency do
+      "BTC" ->
+        btc = amount / 100_000_000
+        :erlang.float_to_binary(btc, decimals: 8)
+
+      "USDT" ->
+        # Convert from 6 decimals to whole USDT
+        usdt = amount / 1_000_000
+        :erlang.float_to_binary(usdt, decimals: 2)
+    end
+  end
+
+  @spec dollar_to_cents(binary() | integer() | Decimal.t()) :: integer()
+  def dollar_to_cents(amount) do
+    Decimal.mult(Decimal.new(amount), Decimal.new(100)) |> Decimal.to_integer()
+  end
+
+  def btc_to_satoshis(amount) do
+    Decimal.mult(Decimal.new(amount), Decimal.new(100_000_000)) |> Decimal.to_integer()
+  end
+
+  @spec satoshis_to_btc(integer()) :: Decimal.t()
+  def satoshis_to_btc(amount) do
+    Decimal.div(Decimal.new(amount), Decimal.new(100_000_000)) |> Decimal.normalize()
+  end
+
+  @spec cents_to_usd(integer()) :: Decimal.t()
+  def cents_to_usd(amount) do
+    Decimal.mult(Decimal.new(amount), Decimal.from_float(1 / 100))
+    |> Decimal.normalize()
+  end
+
+  def total_usd_for_cents_and_satoshis(cents, satoshis) do
+    btc = satoshis_to_btc(satoshis)
+    usd = cents_to_usd(cents)
+    Decimal.mult(Decimal.new(btc), Decimal.new(usd)) |> Decimal.round(2) |> Decimal.normalize()
+  end
 end

@@ -402,7 +402,7 @@ defmodule FycApp.Wallets do
     with {:ok, balance} <- get_balance(user_id, currency) do
       balance
       |> Balance.changeset(%{
-        amount: Decimal.add(balance.amount, amount)
+        amount: balance.amount + amount
       })
       |> Repo.update()
     end
@@ -417,7 +417,7 @@ defmodule FycApp.Wallets do
          :ok <- check_sufficient_funds(balance, amount) do
       balance
       |> Balance.changeset(%{
-        amount: Decimal.sub(balance.amount, amount)
+        amount: balance.amount - amount
       })
       |> Repo.update()
     end
@@ -426,7 +426,7 @@ defmodule FycApp.Wallets do
   # Private Functions
 
   defp check_sufficient_funds(balance, amount) do
-    if Decimal.compare(balance.amount, amount) != :lt do
+    if balance.amount >= amount do
       :ok
     else
       {:error, :insufficient_funds}
