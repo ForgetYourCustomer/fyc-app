@@ -51,7 +51,7 @@ defmodule FycAppWeb.TradeLive.Show do
     }
 
     case Trade.create_order(current_user, attrs) do
-      {:ok, _order} ->
+      {:ok} ->
         socket =
           socket
           |> put_flash(:info, "Buy order placed successfully")
@@ -90,7 +90,7 @@ defmodule FycAppWeb.TradeLive.Show do
     }
 
     case Trade.create_order(current_user, attrs) do
-      {:ok, _order} ->
+      {:ok} ->
         socket =
           socket
           |> put_flash(:info, "Sell order placed successfully")
@@ -219,8 +219,6 @@ defmodule FycAppWeb.TradeLive.Show do
       |> Map.new(fn currency ->
         {currency, Trade.available_balance(socket.assigns.current_user.id, currency)}
       end)
-
-    IO.inspect(balances, label: "balances")
 
     assign(socket, :available_balances, balances)
   end

@@ -38,4 +38,18 @@ defmodule FycApp.Wallets.Balance do
     |> validate_required([:amount])
     |> validate_number(:amount, greater_than_or_equal_to: 0)
   end
+
+  @doc """
+  Creates a changeset for updating BTC balance with a deposit.
+  The deposit amount is expected to be an integer representing satoshis.
+  """
+  def deposit_btc_balance_changeset(balance, deposit_amount) when is_integer(deposit_amount) do
+    current_amount = balance.amount || 0
+    new_amount = current_amount + deposit_amount
+
+    balance
+    |> cast(%{amount: new_amount}, [:amount])
+    |> validate_required([:amount])
+    |> validate_number(:amount, greater_than_or_equal_to: 0)
+  end
 end

@@ -204,23 +204,19 @@ defmodule FycApp.Wallets do
       |> Multi.insert(:action, action_changeset)
       # Update balance according to deposit action
       |> Multi.run(:balance, fn repo, _changes ->
-        case repo.one(
-               from b in Balance,
-                 where: b.wallet_id == ^wallet.id and b.currency == ^action_params.in_currency,
-                 lock: "FOR UPDATE"
-             ) do
-          nil ->
-            Balance.changeset(%Balance{}, %{
-              wallet_id: wallet.id,
-              currency: action_params.in_currency,
-              amount: String.to_integer(action_params.in_amount)
-            })
-            |> repo.insert()
+        balance =
+          repo.one!(
+            from b in Balance,
+              where: b.wallet_id == ^wallet.id and b.currency == ^action_params.in_currency
+          )
 
-          balance ->
-            Balance.deposit_usdt_balance_changeset(balance, action_params.in_amount)
-            |> repo.update()
-        end
+        balance_changeset =
+          case action_params.in_currency do
+            "BTC" -> Balance.deposit_btc_balance_changeset(balance, action_params.in_amount)
+            "USDT" -> Balance.deposit_usdt_balance_changeset(balance, action_params.in_amount)
+          end
+
+        repo.update(balance_changeset)
       end)
       # Insert deposit history
       |> Multi.insert(:deposit_history, fn %{balance: balance} ->
@@ -281,8 +277,38 @@ defmodule FycApp.Wallets do
   """
   def process_deposit(
         "BTC",
-        %{"deposit" => [address, amount, tx_id]} = _tx_details
+        %{"deposit" => {"deposits", deposits}} = _tx_details
+      )
+      when is_list(deposits) do
+    # Process each deposit in the list
+    results =
+      Enum.map(deposits, fn [address, amount, tx_id] ->
+        process_single_deposit("BTC", %{"deposit" => [address, amount, tx_id]})
+      end)
+
+    # Check if any deposit failed
+    case Enum.find(results, &(elem(&1, 0) == :error)) do
+      nil ->
+        # All deposits successful, return the last one's result
+        List.last(results)
+
+      error ->
+        # Return the first error encountered
+        error
+    end
+  end
+
+  def process_deposit(
+        "BTC",
+        %{"deposit" => [_address, _amount, _tx_id]} = tx_details
       ) do
+    process_single_deposit("BTC", tx_details)
+  end
+
+  defp process_single_deposit(
+         "BTC",
+         %{"deposit" => [address, amount, tx_id]} = _tx_details
+       ) do
     # Convert amount to integer (satoshis/smallest unit)
 
     # Find the deposit and preload its wallet
@@ -298,7 +324,7 @@ defmodule FycApp.Wallets do
       deposit ->
         process_action(
           deposit.balance.wallet,
-          %Action{
+          %{
             action_type: "deposit",
             in_amount: amount,
             in_currency: "BTC",

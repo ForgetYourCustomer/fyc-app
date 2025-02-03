@@ -20,7 +20,6 @@ defmodule FycAppWeb.WalletLive.Show do
           current_user.id
           |> Wallets.get_user_wallet()
           |> Wallets.ensure_balances_created()
-          |> IO.inspect(label: "Wallet with ensured balances", pretty: true)
 
         if connected?(socket) do
           Phoenix.PubSub.subscribe(FycApp.PubSub, "wallet:#{wallet.id}")
@@ -48,8 +47,6 @@ defmodule FycAppWeb.WalletLive.Show do
   @impl true
   def handle_event("create-deposit", %{"currency" => currency}, socket) do
     balance = Enum.find(socket.assigns.wallet.balances, &(&1.currency == currency))
-    IO.inspect(currency, label: "Currency to create deposit for")
-    IO.inspect(balance, label: "Balance to create deposit for")
 
     case Deposits.create_deposit(balance) do
       {:ok, deposit} ->

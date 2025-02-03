@@ -6,9 +6,9 @@ defmodule FycApp.Trade.TradeExecution do
   @foreign_key_type :binary_id
 
   schema "trades" do
-    field :price, :decimal
-    field :amount, :decimal
-    field :total, :decimal
+    field :price, :integer
+    field :amount, :integer
+    field :total, :integer
     belongs_to :buy_order, FycApp.Trade.Order
     belongs_to :sell_order, FycApp.Trade.Order
 
@@ -40,8 +40,8 @@ defmodule FycApp.Trade.TradeExecution do
       {price, amount, total} when is_nil(price) or is_nil(amount) or is_nil(total) ->
         changeset
       {price, amount, total} ->
-        expected_total = Decimal.mult(price, amount)
-        if Decimal.equal?(total, expected_total) do
+        expected_total = price * amount
+        if total == expected_total do
           changeset
         else
           add_error(changeset, :total, "must equal price * amount")

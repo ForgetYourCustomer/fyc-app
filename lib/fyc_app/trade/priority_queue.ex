@@ -92,14 +92,15 @@ defmodule FycApp.Trade.PriorityQueue do
 
   defp find_key_iter(iter, target_order) do
     case :gb_trees.next(iter) do
-      none when none in [:none, none] ->
+      :none ->
         nil
 
-      {key, order, _next_iter} when order.id == target_order.id ->
-        key
-
-      {_key, _order, next_iter} ->
-        find_key_iter(next_iter, target_order)
+      {key, order, next_iter} ->
+        if order.id == target_order.id do
+          key
+        else
+          find_key_iter(next_iter, target_order)
+        end
     end
   end
 end

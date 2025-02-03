@@ -46,17 +46,19 @@ defmodule FycApp.Trade.MatchingEngine do
   @impl true
   def handle_cast({:add_order, order}, state) do
     market = "#{order.base_currency}_#{order.quote_currency}"
-    market_state = Map.get(state, market, %{
-      buy_orders: PriorityQueue.new(),
-      sell_orders: PriorityQueue.new()
-    })
+
+    market_state =
+      Map.get(state, market, %{
+        buy_orders: PriorityQueue.new(),
+        sell_orders: PriorityQueue.new()
+      })
 
     # Add order to the appropriate queue
     market_state = add_to_queue(market_state, order)
-    
+
     # Try to match orders
     {market_state, matches} = match_orders(market_state)
-    
+
     # Execute matches if any
     execute_matches(matches)
 
@@ -70,11 +72,11 @@ defmodule FycApp.Trade.MatchingEngine do
   @impl true
   def handle_cast({:cancel_order, order}, state) do
     market = "#{order.base_currency}_#{order.quote_currency}"
-    
+
     case Map.get(state, market) do
-      nil -> 
+      nil ->
         {:noreply, state}
-      
+
       market_state ->
         # Remove order from appropriate queue
         market_state = remove_from_queue(market_state, order)
@@ -110,16 +112,23 @@ defmodule FycApp.Trade.MatchingEngine do
 
   defp match_orders(%{buy_orders: buy_orders, sell_orders: sell_orders} = market_state) do
     case {PriorityQueue.peek(buy_orders), PriorityQueue.peek(sell_orders)} do
-      {nil, _} -> {market_state, []}
-      {_, nil} -> {market_state, []}
+      {nil, _} ->
+        {market_state, []}
+
+      {_, nil} ->
+        {market_state, []}
+
       {buy_order, sell_order} ->
         if matchable?(buy_order, sell_order) do
           # Calculate match amount and price
-          match_amount = min(
-            Decimal.sub(buy_order.amount, buy_order.filled_amount),
-            Decimal.sub(sell_order.amount, sell_order.filled_amount)
-          )
-          match_price = sell_order.price  # Use sell order price for matching
+          match_amount =
+            min(
+              buy_order.amount - buy_order.filled_amount,
+              sell_order.amount - sell_order.filled_amount
+            )
+
+          # Use sell order price for matching
+          match_price = sell_order.price
 
           # Create match record
           match = %{
@@ -130,12 +139,13 @@ defmodule FycApp.Trade.MatchingEngine do
           }
 
           # Update orders
-          {updated_market_state, more_matches} = update_orders_after_match(
-            market_state,
-            buy_order,
-            sell_order,
-            match_amount
-          )
+          {updated_market_state, more_matches} =
+            update_orders_after_match(
+              market_state,
+              buy_order,
+              sell_order,
+              match_amount
+            )
 
           {updated_market_state, [match | more_matches]}
         else
@@ -145,7 +155,7 @@ defmodule FycApp.Trade.MatchingEngine do
   end
 
   defp matchable?(buy_order, sell_order) do
-    Decimal.compare(buy_order.price, sell_order.price) in [:gt, :eq]
+    buy_order.price >= sell_order.price
   end
 
   defp update_orders_after_match(market_state, buy_order, sell_order, match_amount) do
@@ -154,29 +164,31 @@ defmodule FycApp.Trade.MatchingEngine do
     sell_order = update_filled_amount(sell_order, match_amount)
 
     # Remove filled orders and update queues
-    market_state = if order_filled?(buy_order) do
-      remove_from_queue(market_state, buy_order)
-    else
-      update_in_queue(market_state, buy_order)
-    end
+    market_state =
+      if order_filled?(buy_order) do
+        remove_from_queue(market_state, buy_order)
+      else
+        update_in_queue(market_state, buy_order)
+      end
 
-    market_state = if order_filled?(sell_order) do
-      remove_from_queue(market_state, sell_order)
-    else
-      update_in_queue(market_state, sell_order)
-    end
+    market_state =
+      if order_filled?(sell_order) do
+        remove_from_queue(market_state, sell_order)
+      else
+        update_in_queue(market_state, sell_order)
+      end
 
     # Try to match more orders
     match_orders(market_state)
   end
 
   defp update_filled_amount(order, match_amount) do
-    new_filled_amount = Decimal.add(order.filled_amount, match_amount)
+    new_filled_amount = order.filled_amount + match_amount
     %{order | filled_amount: new_filled_amount}
   end
 
   defp order_filled?(order) do
-    Decimal.compare(order.filled_amount, order.amount) == :eq
+    order.filled_amount == order.amount
   end
 
   defp update_in_queue(market_state, %Order{side: "buy"} = order) do
@@ -190,12 +202,13 @@ defmodule FycApp.Trade.MatchingEngine do
   end
 
   defp execute_matches([]), do: :ok
+
   defp execute_matches([match | rest]) do
     case Trade.execute_trade(match) do
       {:ok, _} ->
         broadcast_trade(match)
         execute_matches(rest)
-      
+
       {:error, reason} ->
         Logger.error("Failed to execute trade: #{inspect(reason)}")
         # Continue with remaining matches even if one fails
@@ -205,6 +218,7 @@ defmodule FycApp.Trade.MatchingEngine do
 
   defp broadcast_trade(match) do
     market = "#{match.buy_order.base_currency}_#{match.buy_order.quote_currency}"
+
     PubSub.broadcast(
       @pubsub,
       "trades:#{market}",
@@ -228,7 +242,7 @@ defmodule FycApp.Trade.MatchingEngine do
   defp serialize_orders(queue) do
     queue
     |> :gb_trees.to_list()
-    |> Enum.map(fn {_key, order} -> 
+    |> Enum.map(fn {_key, order} ->
       %{
         id: order.id,
         price: order.price,

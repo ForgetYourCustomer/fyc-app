@@ -10,13 +10,14 @@ defmodule FycApp.Trade do
   alias Ecto.Multi
   alias FycApp.Trade.LockedBalance
   alias FycApp.Currencies
+  alias FycApp.Trade.MatchingEngine
 
   @doc """
   Creates a new order with funds validation.
 
   ## Parameters
     - user: The user creating the order
-    - attrs: Order attributes
+    - attrs: Order attributes with smallest unit amounts
 
   ## Examples
       iex> create_order(user, %{
@@ -24,8 +25,8 @@ defmodule FycApp.Trade do
         side: "buy",
         base_currency: "BTC",
         quote_currency: "USDT",
-        price: "50000.00",
-        amount: "1.5"
+        price: 5000000,
+        amount: 15
       })
       {:ok, %Order{}}
   """
@@ -42,9 +43,11 @@ defmodule FycApp.Trade do
     |> Repo.transaction()
     |> case do
       {:ok, %{order: order}} = result ->
+        # Add the order to the matching engine
+        MatchingEngine.add_order(order)
         # Broadcast the new order to the matching engine
         broadcast_order_created(order)
-        result
+        {:ok}
 
       {:error, _failed_operation, changeset, _changes} ->
         {:error, changeset}
@@ -129,7 +132,7 @@ defmodule FycApp.Trade do
     Multi.new()
     |> Multi.update(:order, Order.changeset(order, %{status: status}))
     |> Multi.run(:unlock_balance, fn _repo, _changes ->
-      unlock_balance(order)
+      unlock_balance_canceled(order)
     end)
     |> Repo.transaction()
     |> case do
@@ -190,7 +193,7 @@ defmodule FycApp.Trade do
         sell_order_id: sell_order.id,
         price: price,
         amount: amount,
-        total: price * amount
+        total: Currencies.total_price_sunit(price, amount)
       }
     end)
     |> Multi.run(:update_orders, fn repo, %{trade: trade} ->
@@ -201,6 +204,11 @@ defmodule FycApp.Trade do
       # Transfer base currency from seller to buyer
       # Transfer quote currency from buyer to seller
       update_balances(repo, buy_order, sell_order, amount, price)
+    end)
+    |> Multi.run(:unlock_balances, fn repo, %{trade: trade} ->
+      # Transfer base currency from seller to buyer
+      # Transfer quote currency from buyer to seller
+      unlock_balances(repo, buy_order, sell_order, amount, price)
     end)
     |> Repo.transaction()
   end
@@ -261,7 +269,7 @@ defmodule FycApp.Trade do
   end
 
   defp update_balances(repo, buy_order, sell_order, amount, price) do
-    quote_amount = amount * price
+    quote_amount = Currencies.total_price_sunit(price, amount)
 
     with {:ok, _} <-
            transfer_balance(
@@ -294,32 +302,6 @@ defmodule FycApp.Trade do
 
   # Private functions
 
-  defp validate_balance(
-         user,
-         %{side: "buy", quote_currency: currency, price: price, amount: amount} = attrs
-       ) do
-    required_amount = price * amount
-    available = available_balance(user.id, currency)
-
-    if available >= required_amount do
-      {:ok, available}
-    else
-      {:error, "Insufficient available #{currency} balance"}
-    end
-  end
-
-  defp validate_balance(user, %{side: "sell", base_currency: currency, amount: amount} = _attrs) do
-    available = available_balance(user.id, currency)
-
-    case available >= amount do
-      true ->
-        {:ok, available}
-
-      _ ->
-        {:error, "Insufficient available #{currency} balance"}
-    end
-  end
-
   defp lock_balance(
          user,
          %{
@@ -330,19 +312,17 @@ defmodule FycApp.Trade do
            order_id: order_id
          } = _attrs
        ) do
-    btc_amount = Currencies.satoshis_to_btc(amount)
-
-    required_amount = Decimal.mult(Decimal.new(price), btc_amount) |> Decimal.to_integer()
+    quote_amount = Currencies.total_price_sunit(price, amount)
 
     available_amount = available_balance(user.id, currency)
 
-    if available_amount < required_amount do
+    if available_amount < quote_amount do
       {:error, :insufficient_balance}
     else
       create_locked_balance(%{
         user_id: user.id,
         currency: currency,
-        amount: required_amount,
+        amount: quote_amount,
         order_id: order_id
       })
     end
@@ -367,7 +347,14 @@ defmodule FycApp.Trade do
     end
   end
 
-  defp unlock_balance(%Order{} = order) do
+  defp unlock_balances(repo, buy_order, sell_order, amount, price) do
+    quote_amount = Currencies.total_price_sunit(price, amount)
+
+    unlock_amount(buy_order.user_id, buy_order.id, buy_order.quote_currency, quote_amount)
+    unlock_amount(sell_order.user_id, sell_order.id, sell_order.base_currency, amount)
+  end
+
+  defp unlock_balance_canceled(%Order{} = order) do
     case order.side do
       "buy" ->
         currency = order.quote_currency
@@ -384,23 +371,41 @@ defmodule FycApp.Trade do
     end
   end
 
-  defp unlock_amount(user_id, order_id, currency, _amount) do
+  defp unlock_amount(user_id, order_id, currency, amount) do
     query =
       from lb in LockedBalance,
         where:
           lb.user_id == ^user_id and
             lb.currency == ^currency and
-            lb.order_id == ^order_id
+            lb.order_id == ^order_id,
+        select: lb,
+        lock: "FOR UPDATE"
 
-    case Repo.one(query) do
-      nil ->
-        {:error, :locked_balance_not_found}
+    Multi.new()
+    |> Multi.one(:get_locked_balance, query)
+    |> Multi.run(:handle_unlock, fn repo, %{get_locked_balance: locked_balance} ->
+      case locked_balance do
+        nil ->
+          {:error, :locked_balance_not_found}
 
-      locked_balance ->
-        Multi.new()
-        |> Multi.delete(:delete_locked_balance, locked_balance)
-        |> Repo.transaction()
-    end
+        lb when lb.amount < amount ->
+          {:error, :insufficient_locked_balance}
+
+        lb ->
+          remaining = lb.amount - amount
+
+          if remaining == 0 do
+            # If fully unlocked, delete the locked balance
+            repo.delete(lb)
+          else
+            # If partially unlocked, update the locked balance
+            lb
+            |> Ecto.Changeset.change(amount: remaining)
+            |> repo.update()
+          end
+      end
+    end)
+    |> Repo.transaction()
   end
 
   defp get_total_locked_amount(user_id, currency) do
@@ -427,11 +432,6 @@ defmodule FycApp.Trade do
   end
 
   defp broadcast_cancel_order(order) do
-    # Phoenix.PubSub.broadcast(
-    #   FycApp.PubSub,
-    #   "orders:#{order.base_currency}_#{order.quote_currency}",
-    #   {:cancel_order, order}
-    # )
     Phoenix.PubSub.broadcast(
       FycApp.PubSub,
       "user_orders:#{order.user_id}",
@@ -467,24 +467,6 @@ defmodule FycApp.Trade do
 
   """
   def get_order!(id), do: Repo.get!(Order, id)
-
-  @doc """
-  Creates a order.
-
-  ## Examples
-
-      iex> create_order(%{field: value})
-      {:ok, %Order{}}
-
-      iex> create_order(%{field: bad_value})
-      {:error, %Ecto.Changeset{}}
-
-  """
-  def create_order(attrs \\ %{}) do
-    %Order{}
-    |> Order.changeset(attrs)
-    |> Repo.insert()
-  end
 
   @doc """
   Updates a order.
@@ -747,14 +729,5 @@ defmodule FycApp.Trade do
 
     # Return available balance if positive, or return 0
     max(wallet_balance - locked_balance, 0)
-  end
-
-  # Broadcast balance update for a user
-  defp broadcast_balance_update(user_id, currency, amount) do
-    Phoenix.PubSub.broadcast(
-      FycApp.PubSub,
-      "balance:#{user_id}",
-      {:balance_updated, currency, amount}
-    )
   end
 end
