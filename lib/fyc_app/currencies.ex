@@ -36,4 +36,17 @@ defmodule FycApp.Currencies do
     Decimal.mult(Decimal.new(usdt), Decimal.new(1_000_000))
     |> Decimal.to_integer()
   end
+
+  def total_price_sunit(sunit, satoshis) do
+    satoshis_to_btc(satoshis)
+    |> Decimal.mult(sunit)
+    |> Decimal.to_integer()
+  end
+
+  def total_price_usdt(usdt, satoshis) do
+    satoshis_to_btc(satoshis)
+    |> Decimal.mult(usdt)
+    |> Decimal.round(2)
+    |> Decimal.normalize()
+  end
 end
