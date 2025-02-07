@@ -8,25 +8,39 @@ defmodule FycAppWeb.TradeLive.Show do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       MatchingEngine.subscribe_to_market("BTC_USDT")
-      # Subscribe to balance updates for the current user
       Phoenix.PubSub.subscribe(FycApp.PubSub, "balance:#{socket.assigns.current_user.id}")
       Phoenix.PubSub.subscribe(FycApp.PubSub, "user_orders:#{socket.assigns.current_user.id}")
+      Phoenix.PubSub.subscribe(FycApp.PubSub, "trades:BTC_USDT")
     end
 
     buy_form = to_form(%{"price" => "", "amount" => ""})
     sell_form = to_form(%{"price" => "", "amount" => ""})
+
+    # Get trade history and format it for the chart
+    trades =
+      Trade.get_trade_history()
+      |> Enum.map(fn trade ->
+        %{
+          price: trade.price |> Currencies.sunit_to_usdt() |> Decimal.to_float(),
+          amount: trade.amount |> Currencies.satoshis_to_btc() |> Decimal.to_float(),
+          executed_at: trade.inserted_at
+        }
+      end)
+
+    IO.inspect(trades, label: "trades")
 
     socket =
       socket
       |> assign(:page_title, "Trade")
       |> assign(:buy_form, buy_form)
       |> assign(:sell_form, sell_form)
-      |> assign(:buy_total, 0)
-      |> assign(:sell_total, 0)
+      |> assign(:buy_total, Decimal.new(0))
+      |> assign(:sell_total, Decimal.new(0))
       |> assign(:current_price, 0)
       |> assign(:buy_orders, [])
       |> assign(:sell_orders, [])
       |> assign(:open_orders, Trade.list_user_orders(socket.assigns.current_user))
+      |> assign(:trades, trades)
       |> assign_available_balances()
       |> assign_order_book()
 
@@ -56,12 +70,11 @@ defmodule FycAppWeb.TradeLive.Show do
           socket
           |> put_flash(:info, "Buy order placed successfully")
           |> assign(:buy_form, to_form(%{"price" => "", "amount" => ""}))
-          |> assign(:buy_total, 0)
 
         {:noreply, socket}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :buy_form, to_form(changeset))}
+        {:noreply, assign(socket, :buy_form, changeset)}
 
       {:error, :insufficient_balance} ->
         socket =
@@ -95,12 +108,11 @@ defmodule FycAppWeb.TradeLive.Show do
           socket
           |> put_flash(:info, "Sell order placed successfully")
           |> assign(:sell_form, to_form(%{"price" => "", "amount" => ""}))
-          |> assign(:sell_total, Decimal.new(0))
 
         {:noreply, socket}
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        {:noreply, assign(socket, :sell_form, to_form(changeset))}
+        {:noreply, assign(socket, :sell_form, changeset)}
 
       {:error, :insufficient_balance} ->
         socket =
@@ -124,22 +136,26 @@ defmodule FycAppWeb.TradeLive.Show do
     end
   end
 
-  @impl true
-  def handle_event("validate_buy", %{"price" => price, "amount" => amount}, socket) do
+  def handle_event("buy_form_changed", %{"price" => price, "amount" => amount}, socket) do
+    # get amount and price from params
     total =
-      case {Decimal.parse(price), Decimal.parse(amount)} do
-        {{:ok, p}, {:ok, a}} -> Decimal.mult(p, a)
+      with {p, _} <- Decimal.parse(price),
+           {a, _} <- Decimal.parse(amount) do
+        Decimal.mult(p, a)
+      else
         _ -> Decimal.new(0)
       end
 
     {:noreply, assign(socket, :buy_total, total)}
   end
 
-  @impl true
-  def handle_event("validate_sell", %{"price" => price, "amount" => amount}, socket) do
+  def handle_event("sell_form_changed", %{"price" => price, "amount" => amount}, socket) do
+    # handle regular form change
     total =
-      case {Decimal.parse(price), Decimal.parse(amount)} do
-        {{:ok, p}, {:ok, a}} -> Decimal.mult(p, a)
+      with {p, _} <- Decimal.parse(price),
+           {a, _} <- Decimal.parse(amount) do
+        Decimal.mult(p, a)
+      else
         _ -> Decimal.new(0)
       end
 
@@ -148,6 +164,8 @@ defmodule FycAppWeb.TradeLive.Show do
 
   @impl true
   def handle_info({:order_book_updated, order_book}, socket) do
+    IO.inspect(order_book, label: "order book updated")
+
     socket =
       socket
       |> assign(:buy_orders, order_book.buy_orders)
@@ -158,8 +176,20 @@ defmodule FycAppWeb.TradeLive.Show do
   end
 
   @impl true
-  def handle_info({:trade_executed, _trade}, socket) do
-    {:noreply, assign_order_book(socket)}
+  def handle_info({:trade_executed, %{price: price, amount: amount} = _trade}, socket) do
+    trade_data = %{
+      price: price |> Currencies.sunit_to_usdt() |> Decimal.to_float(),
+      amount: amount |> Currencies.satoshis_to_btc() |> Decimal.to_float(),
+      executed_at: DateTime.utc_now()
+    }
+
+    IO.inspect(trade_data, label: "trade data")
+
+    # Keep last 100 trades
+    trades = [trade_data | socket.assigns.trades] |> Enum.take(100)
+    IO.inspect(trades, label: "updated trades")
+
+    {:noreply, assign(socket, :trades, trades)}
   end
 
   @impl true
@@ -236,5 +266,15 @@ defmodule FycAppWeb.TradeLive.Show do
       )
 
     assign(socket, :available_balances, updated_balances)
+  end
+
+  defp assign_balances(socket) do
+    balances =
+      Currencies.supported_currencies()
+      |> Map.new(fn currency ->
+        {currency, Trade.available_balance(socket.assigns.current_user.id, currency)}
+      end)
+
+    assign(socket, :available_balances, balances)
   end
 end

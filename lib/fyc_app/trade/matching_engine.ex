@@ -228,8 +228,8 @@ defmodule FycApp.Trade.MatchingEngine do
 
   defp broadcast_order_book(market, market_state) do
     order_book = %{
-      buy_orders: serialize_orders(market_state.buy_orders),
-      sell_orders: serialize_orders(market_state.sell_orders)
+      buy_orders: serialize_orders(market_state.buy_orders, 5),
+      sell_orders: serialize_orders(market_state.sell_orders, 5)
     }
 
     PubSub.broadcast(
@@ -239,10 +239,17 @@ defmodule FycApp.Trade.MatchingEngine do
     )
   end
 
-  defp serialize_orders(queue) do
+  defp serialize_orders(queue, limit) do
     queue
-    |> :gb_trees.to_list()
-    |> Enum.map(fn {_key, order} ->
+    |> :gb_trees.iterator()
+    |> Stream.unfold(fn iter ->
+      case :gb_trees.next(iter) do
+        :none -> nil
+        {_key, value, next_iter} -> {value, next_iter}
+      end
+    end)
+    |> Enum.take(limit)
+    |> Enum.map(fn order ->
       %{
         id: order.id,
         price: order.price,

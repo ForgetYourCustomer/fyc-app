@@ -44,14 +44,16 @@ defmodule FycApp.Trade.PriorityQueue do
   Updates an existing order in the queue.
   """
   def update(queue, order) do
-    case find_key(queue, order) do
-      nil ->
-        queue
+    # First remove the old order
+    queue = case find_key(queue, order) do
+      nil -> queue
+      key -> :gb_trees.delete(key, queue)
+    end
 
-      key ->
-        queue
-        |> :gb_trees.delete(key)
-        |> :gb_trees.insert(key, order)
+    # Then insert the updated order with a new key based on its side
+    case order.side do
+      "buy" -> insert_buy(queue, order.price, order)
+      "sell" -> insert_sell(queue, order.price, order)
     end
   end
 

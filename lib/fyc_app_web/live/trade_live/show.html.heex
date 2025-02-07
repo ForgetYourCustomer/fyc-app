@@ -1,12 +1,20 @@
 <div class="relative">
-  <div class="max-w-full  mx-auto px-4 sm:px-6 lg:px-8 py-8 border border-red-500">
+  <div class="max-w-full  mx-auto px-4 sm:px-6 lg:px-8 py-8 ">
     <div class="bg-white shadow-sm ring-1 ring-gray-900/5 sm:rounded-xl p-8">
       <h1 class="text-2xl font-semibold mb-6">Trade</h1>
 
       <div class="grid grid-cols-12 gap-6">
-        <%!-- Trading chart will go here --%>
-        <div class="col-span-8 bg-gray-50 rounded-lg p-4 h-96">
-          <p class="text-gray-500">Chart coming soon...</p>
+        <%!-- Trading chart --%>
+        <div class="col-span-8 bg-gray-50 rounded-lg p-4" style="height: 400px;">
+          <div class="w-full h-full">
+            <canvas
+              id="trading-chart"
+              phx-hook="TradingChart"
+              data-trades={Jason.encode!(@trades)}
+              phx-update="ignore"
+            >
+            </canvas>
+          </div>
         </div>
 
         <%!-- Order book --%>
@@ -21,7 +29,7 @@
 
             <%!-- Sell orders (red) --%>
             <div class="space-y-1">
-              <%= for order <- @sell_orders do %>
+              <%= for order <- Enum.reverse(@sell_orders) do %>
                 <div class="grid grid-cols-3 text-sm text-red-600">
                   <div>{order.price}</div>
                   <div class="text-right">{order.amount}</div>
@@ -75,12 +83,21 @@
         <div class="col-span-4 bg-gray-50 rounded-lg p-4">
           <div class="bg-white rounded-lg shadow-sm ring-1 ring-gray-900/5 p-4">
             <h3 class="text-lg font-medium mb-4 text-green-600">Buy BTC</h3>
-            <.form for={@buy_form} phx-submit="place_buy_order" class="space-y-4">
+            <.form
+              for={@buy_form}
+              phx-submit="place_buy_order"
+              phx-change="buy_form_changed"
+              class="space-y-4"
+              id="buy-form"
+            >
               <div>
-                <label class="block text-sm font-medium text-gray-700">Price (USDT)</label>
+                <label class="block text-sm font-medium text-gray-700" for="buy-price">
+                  Price (USDT)
+                </label>
                 <.input
                   type="number"
                   field={@buy_form[:price]}
+                  id="buy-price"
                   step="0.01"
                   min="0"
                   required
@@ -89,10 +106,13 @@
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700">Amount (BTC)</label>
+                <label class="block text-sm font-medium text-gray-700" for="buy-amount">
+                  Amount (BTC)
+                </label>
                 <.input
                   type="number"
                   field={@buy_form[:amount]}
+                  id="buy-amount"
                   step="0.00000001"
                   min="0"
                   required
@@ -123,12 +143,21 @@
         <div class="col-span-4 bg-gray-50 rounded-lg p-4">
           <div class="bg-white rounded-lg shadow-sm ring-1 ring-gray-900/5 p-4">
             <h3 class="text-lg font-medium mb-4 text-red-600">Sell BTC</h3>
-            <.form for={@sell_form} phx-submit="place_sell_order" class="space-y-4">
+            <.form
+              for={@sell_form}
+              phx-submit="place_sell_order"
+              phx-change="sell_form_changed"
+              class="space-y-4"
+              id="sell-form"
+            >
               <div>
-                <label class="block text-sm font-medium text-gray-700">Price (USDT)</label>
+                <label class="block text-sm font-medium text-gray-700" for="sell-price">
+                  Price (USDT)
+                </label>
                 <.input
                   type="number"
                   field={@sell_form[:price]}
+                  id="sell-price"
                   step="0.01"
                   min="0"
                   required
@@ -137,10 +166,13 @@
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700">Amount (BTC)</label>
+                <label class="block text-sm font-medium text-gray-700" for="sell-amount">
+                  Amount (BTC)
+                </label>
                 <.input
                   type="number"
                   field={@sell_form[:amount]}
+                  id="sell-amount"
                   step="0.00000001"
                   min="0"
                   required

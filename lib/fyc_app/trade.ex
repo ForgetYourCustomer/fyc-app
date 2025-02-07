@@ -707,6 +707,27 @@ defmodule FycApp.Trade do
     TradeExecution.changeset(trade_execution, attrs)
   end
 
+  @doc """
+  Gets trade history with a default limit of 100 trades.
+  Orders trades by inserted_at in descending order.
+
+  ## Parameters
+    - limit: Optional limit of trades to return (default: 100)
+
+  ## Examples
+      iex> get_trade_history()
+      [%TradeExecution{}, ...]
+
+      iex> get_trade_history(50)
+      [%TradeExecution{}, ...]
+  """
+  def get_trade_history(limit \\ 100) do
+    TradeExecution
+    |> order_by([t], desc: t.inserted_at)
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
   # This helper function calculates the total locked amount for a specific user and currency.
   def get_locked_balance_total(user_id, currency) do
     from(lb in LockedBalance,

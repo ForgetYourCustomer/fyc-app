@@ -3,3 +3,18 @@
 @import "tailwindcss/utilities";
 
 /* This file is for your main application CSS */
+
+.app-layout {
+  display: flex;
+  min-height: calc(100vh - 4rem); /* Subtract header height */
+}
+
+.app-layout .sidebar {
+  width: 16rem; /* 64px - matches the sidebar width */
+  flex-shrink: 0;
+}
+
+.app-layout .main-content {
+  flex: 1;
+  padding-left: 1rem;
+}

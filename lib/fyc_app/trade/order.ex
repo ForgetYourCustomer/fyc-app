@@ -5,6 +5,8 @@ defmodule FycApp.Trade.Order do
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
+  @derive {Jason.Encoder, only: [:id, :price, :amount, :filled_amount, :side, :status, :inserted_at]}
+
   @order_types ["limit", "market"]
   @order_sides ["buy", "sell"]
   @order_statuses ["pending", "partial", "filled", "cancelled", "partially_cancelled"]
